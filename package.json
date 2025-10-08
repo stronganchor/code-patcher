@@ -12,7 +12,8 @@
   ],
   "activationEvents": [
     "onCommand:aiCodePatcher.applyPatch",
-    "onCommand:aiCodePatcher.applyPatchFromClipboard"
+    "onCommand:aiCodePatcher.applyPatchFromClipboard",
+    "onCommand:aiCodePatcher.applyPatchFromSelection"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -24,6 +25,10 @@
       {
         "command": "aiCodePatcher.applyPatchFromClipboard",
         "title": "AI Code Patcher: Apply Patch from Clipboard"
+      },
+      {
+        "command": "aiCodePatcher.applyPatchFromSelection",
+        "title": "AI Code Patcher: Apply Patch from Selection"
       }
     ],
     "keybindings": [
@@ -31,6 +36,12 @@
         "command": "aiCodePatcher.applyPatchFromClipboard",
         "key": "ctrl+shift+v",
         "mac": "cmd+shift+v",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "aiCodePatcher.applyPatchFromSelection",
+        "key": "ctrl+shift+alt+v",
+        "mac": "cmd+shift+alt+v",
         "when": "editorTextFocus"
       }
     ],

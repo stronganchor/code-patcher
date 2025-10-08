@@ -15,8 +15,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const codeBlock = await vscode.window.showInputBox({
-                prompt: 'Paste code block with context lines',
-                placeHolder: 'context line\nchanged code\ncontext line',
+                prompt: 'Paste code block with context lines (NOTE: Use Ctrl+Shift+V from clipboard for multi-line)',
+                placeHolder: 'Use clipboard command instead for multi-line code',
                 ignoreFocusOut: true
             });
 
@@ -44,12 +44,78 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
+            // Debug: Show what we got from clipboard
+            const hasCarriageReturn = codeBlock.includes('\r\n');
+            const hasNewline = codeBlock.includes('\n');
+            const hasR = codeBlock.includes('\r');
+            const lineCount = codeBlock.split(/\r\n|\r|\n/).length;
+
+            // If only 1 line detected, show helpful error
+            if (lineCount === 1 && codeBlock.length > 80) {
+                const choice = await vscode.window.showWarningMessage(
+                    `Clipboard appears to be a single line (${codeBlock.length} chars). Line breaks may have been lost when copying. Try using "Apply Patch from Selection" instead.`,
+                    'Try Selection Instead',
+                    'Continue Anyway'
+                );
+
+                if (choice === 'Try Selection Instead') {
+                    await vscode.commands.executeCommand('aiCodePatcher.applyPatchFromSelection');
+                    return;
+                } else if (choice !== 'Continue Anyway') {
+                    return;
+                }
+            }
+
             await applyPatchToEditor(editor, codeBlock);
+        }
+    );
+
+    // New command: Apply from current text selection
+    let applyPatchFromSelectionCommand = vscode.commands.registerCommand(
+        'aiCodePatcher.applyPatchFromSelection',
+        async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active editor found');
+                return;
+            }
+
+            const selection = editor.selection;
+            const selectedText = editor.document.getText(selection);
+
+            if (!selectedText || !selectedText.trim()) {
+                vscode.window.showInformationMessage(
+                    'No text selected. Please select the code block you want to apply (with context lines), then run this command again.'
+                );
+                return;
+            }
+
+            // Ask which file to apply to
+            const allEditors = vscode.window.visibleTextEditors;
+            if (allEditors.length > 1) {
+                const items = allEditors.map(ed => ({
+                    label: ed.document.fileName.split(/[/\\]/).pop() || 'Untitled',
+                    description: ed.document.fileName,
+                    editor: ed
+                }));
+
+                const choice = await vscode.window.showQuickPick(items, {
+                    placeHolder: 'Select which file to apply the patch to'
+                });
+
+                if (choice) {
+                    await applyPatchToEditor(choice.editor, selectedText);
+                }
+            } else {
+                // Only one editor, apply to it
+                await applyPatchToEditor(editor, selectedText);
+            }
         }
     );
 
     context.subscriptions.push(applyPatchCommand);
     context.subscriptions.push(applyPatchFromClipboardCommand);
+    context.subscriptions.push(applyPatchFromSelectionCommand);
 }
 
 async function applyPatchToEditor(editor: vscode.TextEditor, codeBlock: string) {
@@ -82,7 +148,7 @@ async function applyPatchToEditor(editor: vscode.TextEditor, codeBlock: string) 
         const autoApply = config.get('autoApplySingleMatch', false);
 
         if (autoApply) {
-            await applyPatchAtMatch(editor, codeBlock, 0, options);
+            await applyPatchAtMatch(editor, codeBlock, 0, options, matches[0]);
             const contextMatches = matches[0].contextMatchLength || 0;
             vscode.window.showInformationMessage(
                 `✓ Patch applied at line ${matches[0].startLine + 1} (${(matches[0].confidence * 100).toFixed(0)}% confidence, ${contextMatches} context lines)`
@@ -100,7 +166,7 @@ async function applyPatchToEditor(editor: vscode.TextEditor, codeBlock: string) 
         );
 
         if (choice === 'Apply') {
-            await applyPatchAtMatch(editor, codeBlock, 0, options);
+            await applyPatchAtMatch(editor, codeBlock, 0, options, matches[0]);
             vscode.window.showInformationMessage('✓ Patch applied successfully');
         }
         return;
@@ -160,7 +226,7 @@ async function handleMultipleMatches(
     );
 
     if (choice === 'Apply') {
-        await applyPatchAtMatch(editor, codeBlock, selected.matchIndex, options);
+        await applyPatchAtMatch(editor, codeBlock, selected.matchIndex, options, matches[selected.matchIndex]);
         vscode.window.showInformationMessage('✓ Patch applied successfully');
     }
 }
@@ -169,7 +235,8 @@ async function applyPatchAtMatch(
     editor: vscode.TextEditor,
     codeBlock: string,
     matchIndex: number,
-    options: PatchOptions
+    options: PatchOptions,
+    matchInfo?: Match
 ) {
     const document = editor.document;
     const fileContent = document.getText();
@@ -198,6 +265,11 @@ async function applyPatchAtMatch(
 
     if (!success) {
         vscode.window.showErrorMessage('Failed to apply edit to document');
+    } else {
+        // Show which file was modified and where
+        const fileName = document.fileName.split(/[/\\]/).pop();
+        const lineInfo = matchInfo ? ` at line ${matchInfo.startLine + 1}` : '';
+        vscode.window.showInformationMessage(`✓ Modified ${fileName}${lineInfo}`);
     }
 }
 
