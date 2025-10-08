@@ -90,25 +90,27 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            // Ask which file to apply to
+            // Get all open text editors EXCEPT the current one
             const allEditors = vscode.window.visibleTextEditors;
-            if (allEditors.length > 1) {
-                const items = allEditors.map(ed => ({
-                    label: ed.document.fileName.split(/[/\\]/).pop() || 'Untitled',
-                    description: ed.document.fileName,
-                    editor: ed
-                }));
+            const targetEditors = allEditors.filter(ed => ed.document.uri.toString() !== editor.document.uri.toString());
 
-                const choice = await vscode.window.showQuickPick(items, {
-                    placeHolder: 'Select which file to apply the patch to'
-                });
+            if (targetEditors.length === 0) {
+                vscode.window.showErrorMessage('No other files open. Please open the file you want to patch.');
+                return;
+            }
 
-                if (choice) {
-                    await applyPatchToEditor(choice.editor, selectedText);
-                }
-            } else {
-                // Only one editor, apply to it
-                await applyPatchToEditor(editor, selectedText);
+            const items = targetEditors.map(ed => ({
+                label: ed.document.fileName.split(/[/\\]/).pop() || 'Untitled',
+                description: ed.document.fileName,
+                editor: ed
+            }));
+
+            const choice = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Select which file to apply the patch to'
+            });
+
+            if (choice) {
+                await applyPatchToEditor(choice.editor, selectedText);
             }
         }
     );

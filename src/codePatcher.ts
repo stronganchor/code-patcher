@@ -192,9 +192,9 @@ export class CodePatcher {
         // Must have at least 2 matching context lines (1 before + 1 after, or 2 before, or 2 after)
         if (contextMatchLength >= 2 && (prefixMatch >= 1 || suffixMatch >= 1)) {
           // Calculate confidence based on context match quality
-          const contextRatio = contextMatchLength / blockLines.length;
+          const contextRatio = Math.min(1.0, contextMatchLength / blockLines.length);
           const sizeRatio = windowSize / blockLines.length;
-          const confidence = (contextRatio * 0.7) + (sizeRatio * 0.3);
+          const confidence = Math.min(1.0, (contextRatio * 0.7) + (sizeRatio * 0.3));
 
           if (confidence >= defaultOptions.minConfidence!) {
             const baseIndent = fileLines[fileStart] ? this.detectIndent(fileLines[fileStart]) : '';
