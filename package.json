@@ -2,7 +2,7 @@
   "name": "ai-code-patcher",
   "displayName": "AI Code Patcher",
   "description": "Apply AI-generated code changes with intelligent fuzzy matching",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "your-name",
   "engines": {
     "vscode": "^1.80.0"
@@ -28,7 +28,7 @@
       },
       {
         "command": "aiCodePatcher.applyPatchFromSelection",
-        "title": "AI Code Patcher: Apply Patch from Selection"
+        "title": "AI Code Patcher: Apply Patch from Selection (Scan Workspace)"
       }
     ],
     "keybindings": [
@@ -70,7 +70,36 @@
         "aiCodePatcher.autoApplySingleMatch": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically apply patch if only one match is found"
+          "description": "Automatically apply patch if only one match is found (or a clear winner is found in the workspace)"
+        },
+        "aiCodePatcher.includeGlobs": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "default": "**/*.{ts,tsx,js,jsx,mjs,cjs,php,py,rb,go,java,cs,cpp,c,h,html,css,scss,json,md,xml,yaml,yml,ini,sh,bat,ps1}",
+          "description": "Glob(s) for files to search when scanning the workspace for matches"
+        },
+        "aiCodePatcher.excludeGlobs": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "default": "{**/node_modules/**,**/.git/**,**/out/**,**/dist/**,**/build/**,**/.cache/**,**/.next/**,**/.parcel-cache/**,**/.turbo/**}",
+          "description": "Glob(s) to exclude when scanning the workspace"
+        },
+        "aiCodePatcher.maxFiles": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 1,
+          "description": "Maximum number of files to scan when searching the workspace"
+        },
+        "aiCodePatcher.tieBreakDelta": {
+          "type": "number",
+          "default": 0.03,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence difference treated as a 'tie'. If top two matches are within this delta, you will be prompted to choose."
         }
       }
     }
