@@ -1,4 +1,4 @@
-// extension.ts - Main VS Code Extension Entry Point (Simplified Format)
+// extension.ts - Simple Code Block Matching
 import * as vscode from 'vscode';
 import { CodePatcher, PatchOptions, Match } from './codePatcher';
 
@@ -14,17 +14,17 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            const patchInput = await vscode.window.showInputBox({
-                prompt: 'Paste your patch (OLD/NEW format or SEARCH/REPLACE format)',
-                placeHolder: 'OLD:\\ncontext\\nold code\\ncontext\\n\\nNEW:\\ncontext\\nnew code\\ncontext',
+            const codeBlock = await vscode.window.showInputBox({
+                prompt: 'Paste code block with context lines',
+                placeHolder: 'context line\nchanged code\ncontext line',
                 ignoreFocusOut: true
             });
 
-            if (!patchInput) {
+            if (!codeBlock) {
                 return;
             }
 
-            await applyPatchToEditor(editor, patchInput);
+            await applyPatchToEditor(editor, codeBlock);
         }
     );
 
@@ -37,14 +37,14 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            const patchInput = await vscode.env.clipboard.readText();
+            const codeBlock = await vscode.env.clipboard.readText();
 
-            if (!patchInput) {
+            if (!codeBlock || !codeBlock.trim()) {
                 vscode.window.showErrorMessage('Clipboard is empty');
                 return;
             }
 
-            await applyPatchToEditor(editor, patchInput);
+            await applyPatchToEditor(editor, codeBlock);
         }
     );
 
@@ -52,28 +52,29 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(applyPatchFromClipboardCommand);
 }
 
-async function applyPatchToEditor(editor: vscode.TextEditor, patchInput: string) {
+async function applyPatchToEditor(editor: vscode.TextEditor, codeBlock: string) {
     const document = editor.document;
     const fileContent = document.getText();
 
     const config = vscode.workspace.getConfiguration('aiCodePatcher');
     const options: PatchOptions = {
         fuzzyMatch: config.get('fuzzyMatch', true),
-        minConfidence: config.get('minConfidence', 0.7),
+        minConfidence: config.get('minConfidence', 0.6),
         contextLines: config.get('contextLines', 2)
     };
 
-    const result = CodePatcher.patch(fileContent, patchInput, options);
+    const result = CodePatcher.patch(fileContent, codeBlock, options);
 
     if (!result.success) {
-        vscode.window.showErrorMessage(`Patch failed: ${result.error}`);
+        const debugInfo = result.debug ? `\n\nDebug: ${result.debug}` : '';
+        vscode.window.showErrorMessage(`Patch failed: ${result.error}${debugInfo}`);
         return;
     }
 
     const matches = result.matches;
 
     if (matches.length === 0) {
-        vscode.window.showWarningMessage('No matches found for the search block');
+        vscode.window.showWarningMessage('No matches found for the code block');
         return;
     }
 
@@ -81,34 +82,36 @@ async function applyPatchToEditor(editor: vscode.TextEditor, patchInput: string)
         const autoApply = config.get('autoApplySingleMatch', false);
 
         if (autoApply) {
-            await applyPatchAtMatch(editor, patchInput, 0, options);
+            await applyPatchAtMatch(editor, codeBlock, 0, options);
+            const contextMatches = matches[0].contextMatchLength || 0;
             vscode.window.showInformationMessage(
-                `✓ Patch applied at line ${matches[0].startLine + 1} (${(matches[0].confidence * 100).toFixed(0)}% confidence)`
+                `✓ Patch applied at line ${matches[0].startLine + 1} (${(matches[0].confidence * 100).toFixed(0)}% confidence, ${contextMatches} context lines)`
             );
             return;
         }
 
-        const preview = CodePatcher.previewPatch(fileContent, patchInput, 0, options);
+        const preview = CodePatcher.previewPatch(fileContent, codeBlock, 0, options);
+        const contextMatches = matches[0].contextMatchLength || 0;
         const choice = await vscode.window.showInformationMessage(
-            `Found 1 match at line ${matches[0].startLine + 1} (${(matches[0].confidence * 100).toFixed(0)}% confidence)`,
+            `Found 1 match at line ${matches[0].startLine + 1} (${(matches[0].confidence * 100).toFixed(0)}% confidence, ${contextMatches} context lines)`,
             { modal: true, detail: preview || undefined },
             'Apply',
             'Cancel'
         );
 
         if (choice === 'Apply') {
-            await applyPatchAtMatch(editor, patchInput, 0, options);
+            await applyPatchAtMatch(editor, codeBlock, 0, options);
             vscode.window.showInformationMessage('✓ Patch applied successfully');
         }
         return;
     }
 
-    await handleMultipleMatches(editor, patchInput, matches, options);
+    await handleMultipleMatches(editor, codeBlock, matches, options);
 }
 
 async function handleMultipleMatches(
     editor: vscode.TextEditor,
-    patchInput: string,
+    codeBlock: string,
     matches: Match[],
     options: PatchOptions
 ) {
@@ -117,7 +120,7 @@ async function handleMultipleMatches(
     const items: Array<vscode.QuickPickItem & { matchIndex: number }> = matches.map((match, idx) => {
         const lineNum = match.startLine + 1;
         const confidence = (match.confidence * 100).toFixed(0);
-        const similarity = (match.similarity * 100).toFixed(0);
+        const contextMatches = match.contextMatchLength || 0;
 
         const codePreview = document
             .getText(new vscode.Range(match.startLine, 0, match.startLine + 1, 0))
@@ -126,7 +129,7 @@ async function handleMultipleMatches(
 
         return {
             label: `$(file-code) Line ${lineNum}`,
-            description: `${confidence}% confidence, ${similarity}% similarity`,
+            description: `${confidence}% confidence, ${contextMatches} context lines`,
             detail: codePreview,
             matchIndex: idx
         };
@@ -144,7 +147,7 @@ async function handleMultipleMatches(
 
     const preview = CodePatcher.previewPatch(
         document.getText(),
-        patchInput,
+        codeBlock,
         selected.matchIndex,
         options
     );
@@ -157,14 +160,14 @@ async function handleMultipleMatches(
     );
 
     if (choice === 'Apply') {
-        await applyPatchAtMatch(editor, patchInput, selected.matchIndex, options);
+        await applyPatchAtMatch(editor, codeBlock, selected.matchIndex, options);
         vscode.window.showInformationMessage('✓ Patch applied successfully');
     }
 }
 
 async function applyPatchAtMatch(
     editor: vscode.TextEditor,
-    patchInput: string,
+    codeBlock: string,
     matchIndex: number,
     options: PatchOptions
 ) {
@@ -173,7 +176,7 @@ async function applyPatchAtMatch(
 
     const patchedContent = CodePatcher.applyPatch(
         fileContent,
-        patchInput,
+        codeBlock,
         matchIndex,
         options
     );
