@@ -137,6 +137,13 @@ export class CodePatcher {
   }
 
   /**
+   * Normalize line endings (handle Windows \r\n, Unix \n, Mac \r)
+   */
+  static normalizeLineEndings(text: string): string {
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  }
+
+  /**
    * Find best match by looking for longest context match
    */
   static findMatches(
@@ -151,8 +158,12 @@ export class CodePatcher {
       ...options
     };
 
-    const fileLines = fileContent.split('\n');
-    const blockLines = codeBlock.trim().split('\n');
+    // Normalize line endings for both file and code block
+    const normalizedFile = this.normalizeLineEndings(fileContent);
+    const normalizedBlock = this.normalizeLineEndings(codeBlock.trim());
+
+    const fileLines = normalizedFile.split('\n');
+    const blockLines = normalizedBlock.split('\n');
 
     if (blockLines.length === 0) {
       return [];
@@ -244,8 +255,11 @@ export class CodePatcher {
     match: Match,
     codeBlock: string
   ): string {
-    const fileLines = fileContent.split('\n');
-    const blockLines = codeBlock.trim().split('\n');
+    const normalizedFile = this.normalizeLineEndings(fileContent);
+    const normalizedBlock = this.normalizeLineEndings(codeBlock.trim());
+
+    const fileLines = normalizedFile.split('\n');
+    const blockLines = normalizedBlock.split('\n');
 
     // Re-indent the code block to match the original location
     const indentedBlock = blockLines.map((line) => {
@@ -286,8 +300,9 @@ export class CodePatcher {
     const matches = this.findMatches(fileContent, trimmedBlock, options);
 
     if (matches.length === 0) {
-      const blockLines = trimmedBlock.split('\n');
-      const debugMsg = `Searched for ${blockLines.length} lines. First: "${blockLines[0].substring(0, 40)}"`;
+      const normalizedBlock = this.normalizeLineEndings(trimmedBlock);
+      const blockLines = normalizedBlock.split('\n');
+      const debugMsg = `Searched for ${blockLines.length} lines. First: "${blockLines[0].substring(0, 40)}", Last: "${blockLines[blockLines.length - 1].substring(0, 40)}"`;
 
       return {
         success: false,
@@ -341,8 +356,11 @@ export class CodePatcher {
     }
 
     const match = result.matches[matchIndex];
-    const fileLines = fileContent.split('\n');
-    const blockLines = codeBlock.trim().split('\n');
+    const normalizedFile = this.normalizeLineEndings(fileContent);
+    const normalizedBlock = this.normalizeLineEndings(codeBlock.trim());
+
+    const fileLines = normalizedFile.split('\n');
+    const blockLines = normalizedBlock.split('\n');
 
     let preview = `Match at lines ${match.startLine + 1}-${match.endLine} (confidence: ${(match.confidence * 100).toFixed(1)}%, ${match.contextMatchLength} context lines matched)\n\n`;
 
