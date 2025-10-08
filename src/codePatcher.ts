@@ -1,9 +1,4 @@
-// codePatcher.ts - Core Patching Engine with Flexible Format Support
-
-export interface PatchInput {
-  search: string;
-  replace: string;
-}
+// codePatcher.ts - Context-Based Code Matching Engine
 
 export interface Match {
   startLine: number;
@@ -28,89 +23,6 @@ export interface PatchOptions {
 }
 
 export class CodePatcher {
-  /**
-   * Parse input - supports multiple formats:
-   * 1. Simple format: OLD:\n...\n\nNEW:\n...
-   * 2. Legacy format: <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE
-   */
-  static parsePatchInput(input: string): PatchInput | null {
-    // Try simple OLD/NEW format first
-    const simpleFormat = this.parseSimpleFormat(input);
-    if (simpleFormat) {
-      return simpleFormat;
-    }
-
-    // Try legacy SEARCH/REPLACE format
-    const legacyFormat = this.parseLegacyFormat(input);
-    if (legacyFormat) {
-      return legacyFormat;
-    }
-
-    return null;
-  }
-
-  /**
-   * Parse simple format:
-   * OLD:
-   * [code]
-   *
-   * NEW:
-   * [code]
-   */
-  private static parseSimpleFormat(input: string): PatchInput | null {
-    // Look for OLD: and NEW: markers (case insensitive)
-    const oldMatch = input.match(/(?:^|\n)\s*OLD\s*:\s*\n([\s\S]*?)(?=\n\s*NEW\s*:|$)/i);
-    const newMatch = input.match(/(?:^|\n)\s*NEW\s*:\s*\n([\s\S]*?)$/i);
-
-    if (oldMatch && newMatch) {
-      return {
-        search: oldMatch[1].trim(),
-        replace: newMatch[1].trim()
-      };
-    }
-
-    // Also try [OLD] and [NEW] markers
-    const bracketOldMatch = input.match(/(?:^|\n)\s*\[OLD\]\s*\n([\s\S]*?)(?=\n\s*\[NEW\]|$)/i);
-    const bracketNewMatch = input.match(/(?:^|\n)\s*\[NEW\]\s*\n([\s\S]*?)$/i);
-
-    if (bracketOldMatch && bracketNewMatch) {
-      return {
-        search: bracketOldMatch[1].trim(),
-        replace: bracketNewMatch[1].trim()
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * Parse legacy format:
-   * <<<<<<< SEARCH
-   * [code]
-   * =======
-   * [code]
-   * >>>>>>> REPLACE
-   */
-  private static parseLegacyFormat(input: string): PatchInput | null {
-    const searchMarker = '<<<<<<< SEARCH';
-    const dividerMarker = '=======';
-    const replaceMarker = '>>>>>>> REPLACE';
-
-    if (!input.includes(searchMarker) || !input.includes(dividerMarker) || !input.includes(replaceMarker)) {
-      return null;
-    }
-
-    const searchStart = input.indexOf(searchMarker) + searchMarker.length;
-    const dividerPos = input.indexOf(dividerMarker);
-    const replaceStart = dividerPos + dividerMarker.length;
-    const replaceEnd = input.indexOf(replaceMarker);
-
-    const search = input.substring(searchStart, dividerPos).trim();
-    const replace = input.substring(replaceStart, replaceEnd).trim();
-
-    return { search, replace };
-  }
-
   /**
    * Calculate Levenshtein distance between two strings
    */
@@ -202,6 +114,7 @@ export class CodePatcher {
 
   /**
    * Calculate confidence score for a match (0-1)
+   * Higher confidence = better match
    */
   static calculateConfidence(
     originalLines: string[],
@@ -211,15 +124,20 @@ export class CodePatcher {
     const normalizedOriginal = this.normalizeLines(originalLines);
     const normalizedSearch = this.normalizeLines(searchLines);
 
+    // Exact match = perfect confidence
     if (this.linesMatch(normalizedOriginal, normalizedSearch)) {
       return { confidence: 1.0, similarity: 1.0 };
     }
 
+    // If fuzzy matching is disabled, no partial matches
     if (!options.fuzzyMatch) {
       return { confidence: 0.0, similarity: 0.0 };
     }
 
+    // Calculate line-by-line similarity
     const similarity = this.linesSimilarity(normalizedOriginal, normalizedSearch);
+
+    // Penalize length differences
     const lengthDiff = Math.abs(originalLines.length - searchLines.length);
     const lengthPenalty = lengthDiff > 0 ? 0.1 * lengthDiff : 0;
     const confidence = Math.max(0, similarity - lengthPenalty);
@@ -228,29 +146,35 @@ export class CodePatcher {
   }
 
   /**
-   * Find all matches of search block in file content
+   * Find all potential matches for a code block in the file
    */
   static findMatches(
     fileContent: string,
-    searchBlock: string,
+    codeBlock: string,
     options: PatchOptions = {}
   ): Match[] {
     const defaultOptions: PatchOptions = {
       fuzzyMatch: true,
-      minConfidence: 0.7,
+      minConfidence: 0.6, // Lower threshold since we're doing context-based matching
       contextLines: 2,
       ...options
     };
 
     const fileLines = fileContent.split('\n');
-    const searchLines = searchBlock.split('\n');
+    const blockLines = codeBlock.trim().split('\n');
+
+    if (blockLines.length === 0) {
+      return [];
+    }
+
     const matches: Match[] = [];
 
-    for (let i = 0; i <= fileLines.length - searchLines.length; i++) {
-      const slice = fileLines.slice(i, i + searchLines.length);
+    // Try to find matches for the exact block length first
+    for (let i = 0; i <= fileLines.length - blockLines.length; i++) {
+      const slice = fileLines.slice(i, i + blockLines.length);
       const { confidence, similarity } = this.calculateConfidence(
         slice,
-        searchLines,
+        blockLines,
         defaultOptions
       );
 
@@ -262,13 +186,13 @@ export class CodePatcher {
           i
         );
         const contextAfter = fileLines.slice(
-          i + searchLines.length,
-          Math.min(fileLines.length, i + searchLines.length + defaultOptions.contextLines!)
+          i + blockLines.length,
+          Math.min(fileLines.length, i + blockLines.length + defaultOptions.contextLines!)
         );
 
         matches.push({
           startLine: i,
-          endLine: i + searchLines.length,
+          endLine: i + blockLines.length,
           baseIndent,
           confidence,
           similarity,
@@ -278,8 +202,56 @@ export class CodePatcher {
       }
     }
 
-    matches.sort((a, b) => b.confidence - a.confidence);
-    return matches;
+    // Also try with +/- 1 line to handle minor length differences
+    for (let lengthAdjust = -1; lengthAdjust <= 1; lengthAdjust++) {
+      if (lengthAdjust === 0) continue; // Already checked exact length
+
+      const adjustedLength = blockLines.length + lengthAdjust;
+      if (adjustedLength <= 0) continue;
+
+      for (let i = 0; i <= fileLines.length - adjustedLength; i++) {
+        const slice = fileLines.slice(i, i + adjustedLength);
+        const { confidence, similarity } = this.calculateConfidence(
+          slice,
+          blockLines,
+          defaultOptions
+        );
+
+        // Use slightly higher threshold for length-adjusted matches
+        if (confidence >= defaultOptions.minConfidence! + 0.05) {
+          const baseIndent = slice[0] ? this.detectIndent(slice[0]) : '';
+
+          const contextBefore = fileLines.slice(
+            Math.max(0, i - defaultOptions.contextLines!),
+            i
+          );
+          const contextAfter = fileLines.slice(
+            i + adjustedLength,
+            Math.min(fileLines.length, i + adjustedLength + defaultOptions.contextLines!)
+          );
+
+          matches.push({
+            startLine: i,
+            endLine: i + adjustedLength,
+            baseIndent,
+            confidence,
+            similarity,
+            contextBefore,
+            contextAfter
+          });
+        }
+      }
+    }
+
+    // Remove duplicate matches (same line numbers)
+    const uniqueMatches = matches.filter((match, index, self) =>
+      index === self.findIndex((m) => m.startLine === match.startLine && m.endLine === match.endLine)
+    );
+
+    // Sort by confidence (highest first)
+    uniqueMatches.sort((a, b) => b.confidence - a.confidence);
+
+    return uniqueMatches;
   }
 
   /**
@@ -288,52 +260,54 @@ export class CodePatcher {
   static applyReplacement(
     fileContent: string,
     match: Match,
-    replaceBlock: string
+    codeBlock: string
   ): string {
     const fileLines = fileContent.split('\n');
-    const replaceLines = replaceBlock.split('\n');
+    const blockLines = codeBlock.trim().split('\n');
 
-    const indentedReplace = replaceLines.map((line) => {
+    // Re-indent the code block to match the original location
+    const indentedBlock = blockLines.map((line) => {
       if (line.trim() === '') {
         return line;
       }
       return match.baseIndent + line.trim();
     });
 
+    // Replace the matched section
     fileLines.splice(
       match.startLine,
       match.endLine - match.startLine,
-      ...indentedReplace
+      ...indentedBlock
     );
 
     return fileLines.join('\n');
   }
 
   /**
-   * Main entry point: find and apply patch
+   * Main entry point: find matches for a code block
    */
   static patch(
     fileContent: string,
-    patchInput: string,
+    codeBlock: string,
     options?: PatchOptions
   ): PatchResult {
-    const parsed = this.parsePatchInput(patchInput);
+    const trimmedBlock = codeBlock.trim();
 
-    if (!parsed) {
+    if (!trimmedBlock) {
       return {
         success: false,
         matches: [],
-        error: 'Invalid patch format. Use OLD:\\n...\\n\\nNEW:\\n... or <<<<<<< SEARCH format'
+        error: 'Empty code block provided'
       };
     }
 
-    const matches = this.findMatches(fileContent, parsed.search, options);
+    const matches = this.findMatches(fileContent, trimmedBlock, options);
 
     if (matches.length === 0) {
       return {
         success: false,
         matches: [],
-        error: 'No matches found for search block (try lowering minConfidence or enabling fuzzy matching)'
+        error: 'No matches found. Try including more context lines or lowering minConfidence setting.'
       };
     }
 
@@ -344,15 +318,15 @@ export class CodePatcher {
   }
 
   /**
-   * Apply patch to file content using a specific match
+   * Apply code block to file content using a specific match
    */
   static applyPatch(
     fileContent: string,
-    patchInput: string,
+    codeBlock: string,
     matchIndex: number = 0,
     options?: PatchOptions
   ): string | null {
-    const result = this.patch(fileContent, patchInput, options);
+    const result = this.patch(fileContent, codeBlock, options);
 
     if (!result.success || result.matches.length === 0) {
       return null;
@@ -362,8 +336,7 @@ export class CodePatcher {
       return null;
     }
 
-    const parsed = this.parsePatchInput(patchInput)!;
-    return this.applyReplacement(fileContent, result.matches[matchIndex], parsed.replace);
+    return this.applyReplacement(fileContent, result.matches[matchIndex], codeBlock);
   }
 
   /**
@@ -371,11 +344,11 @@ export class CodePatcher {
    */
   static previewPatch(
     fileContent: string,
-    patchInput: string,
+    codeBlock: string,
     matchIndex: number = 0,
     options?: PatchOptions
   ): string | null {
-    const result = this.patch(fileContent, patchInput, options);
+    const result = this.patch(fileContent, codeBlock, options);
 
     if (!result.success || result.matches.length === 0 || matchIndex >= result.matches.length) {
       return null;
@@ -383,23 +356,26 @@ export class CodePatcher {
 
     const match = result.matches[matchIndex];
     const fileLines = fileContent.split('\n');
-    const parsed = this.parsePatchInput(patchInput)!;
-    const replaceLines = parsed.replace.split('\n');
+    const blockLines = codeBlock.trim().split('\n');
 
     let preview = `Match at lines ${match.startLine + 1}-${match.endLine} (confidence: ${(match.confidence * 100).toFixed(1)}%, similarity: ${(match.similarity * 100).toFixed(1)}%)\n\n`;
 
+    // Show context before
     if (match.contextBefore.length > 0) {
       preview += '  ' + match.contextBefore.join('\n  ') + '\n';
     }
 
+    // Show what will be removed
     const removedLines = fileLines.slice(match.startLine, match.endLine);
     preview += removedLines.map(line => `- ${line}`).join('\n') + '\n';
 
-    const indentedReplace = replaceLines.map(line =>
+    // Show what will be added
+    const indentedBlock = blockLines.map(line =>
       line.trim() === '' ? line : match.baseIndent + line.trim()
     );
-    preview += indentedReplace.map(line => `+ ${line}`).join('\n') + '\n';
+    preview += indentedBlock.map(line => `+ ${line}`).join('\n') + '\n';
 
+    // Show context after
     if (match.contextAfter.length > 0) {
       preview += '  ' + match.contextAfter.join('\n  ') + '\n';
     }
