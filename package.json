@@ -1,0 +1,82 @@
+{
+  "name": "ai-code-patcher",
+  "displayName": "AI Code Patcher",
+  "description": "Apply AI-generated code changes with intelligent fuzzy matching",
+  "version": "0.1.0",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:aiCodePatcher.applyPatch",
+    "onCommand:aiCodePatcher.applyPatchFromClipboard"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiCodePatcher.applyPatch",
+        "title": "AI Code Patcher: Apply Patch"
+      },
+      {
+        "command": "aiCodePatcher.applyPatchFromClipboard",
+        "title": "AI Code Patcher: Apply Patch from Clipboard"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiCodePatcher.applyPatchFromClipboard",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "AI Code Patcher",
+      "properties": {
+        "aiCodePatcher.fuzzyMatch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable fuzzy matching for finding code blocks"
+        },
+        "aiCodePatcher.minConfidence": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Minimum confidence threshold for accepting matches (0.0 - 1.0)"
+        },
+        "aiCodePatcher.contextLines": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Number of context lines to show around matches"
+        },
+        "aiCodePatcher.autoApplySingleMatch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically apply patch if only one match is found"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^5.x",
+    "@typescript-eslint/parser": "^5.x",
+    "eslint": "^8.x",
+    "typescript": "^5.0.0"
+  }
+}
